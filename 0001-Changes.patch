@@ -1,0 +1,207 @@
+From 76e78951ee90e23bc276f84e11064a08e4cbd5ce Mon Sep 17 00:00:00 2001
+From: Debjit Mandal <debjitmandal8925@gmail.com>
+Date: Sun, 26 May 2024 16:07:32 +0530
+Subject: [PATCH] Changes
+
+---
+ src/App.tsx   | 53 +++++++++++++++---------------------------
+ src/Graph.tsx | 64 +++++++++++++++++++--------------------------------
+ 2 files changed, 42 insertions(+), 75 deletions(-)
+
+diff --git a/src/App.tsx b/src/App.tsx
+index 0728518..f42c926 100755
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,65 +1,48 @@
+ import React, { Component } from 'react';
+ import DataStreamer, { ServerRespond } from './DataStreamer';
+-import Graph from './Graph';
+ import './App.css';
++import Graph from './Graph';
+ 
+-/**
+- * State declaration for <App />
+- */
+ interface IState {
+-  data: ServerRespond[],
++  data: ServerRespond[];
++  showGraph: boolean;
+ }
+ 
+-/**
+- * The parent element of the react app.
+- * It renders title, button and Graph react element.
+- */
+ class App extends Component<{}, IState> {
+   constructor(props: {}) {
+     super(props);
+ 
+     this.state = {
+-      // data saves the server responds.
+-      // We use this state to parse data down to the child element (Graph) as element property
+       data: [],
++      showGraph: false,
+     };
+   }
+ 
+-  /**
+-   * Render Graph react component with state.data parse as property data
+-   */
+   renderGraph() {
+-    return (<Graph data={this.state.data}/>)
++    if (!this.state.showGraph) {
++      return (<div>Please click "Start Streaming" to see the graph.</div>);
++    }
++    return (<Graph data={this.state.data} />);
+   }
+ 
+-  /**
+-   * Get new data from server and update the state with the new data
+-   */
+   getDataFromServer() {
+-    DataStreamer.getData((serverResponds: ServerRespond[]) => {
+-      // Update the state by creating a new array of data that consists of
+-      // Previous data in the state and the new data from server
+-      this.setState({ data: [...this.state.data, ...serverResponds] });
+-    });
++    this.setState({ showGraph: true });
++    setInterval(async () => {
++      const response = await DataStreamer.getData();
++      this.setState({
++        data: [...this.state.data, ...response],
++      });
++    }, 1000); // Fetch every second
+   }
+ 
+-  /**
+-   * Render the App react component
+-   */
+   render() {
+     return (
+       <div className="App">
+         <header className="App-header">
+-          Bank & Merge Co Task 2
++          <h1 className="App-title">Stock Price Monitor</h1>
+         </header>
+         <div className="App-content">
+-          <button className="btn btn-primary Stream-button"
+-            // when button is click, our react app tries to request
+-            // new data from the server.
+-            // As part of your task, update the getDataFromServer() function
+-            // to keep requesting the data every 100ms until the app is closed
+-            // or the server does not return anymore data.
+-            onClick={() => {this.getDataFromServer()}}>
++          <button className="Stream-button" onClick={() => this.getDataFromServer()}>
+             Start Streaming Data
+           </button>
+           <div className="Graph">
+@@ -67,7 +50,7 @@ class App extends Component<{}, IState> {
+           </div>
+         </div>
+       </div>
+-    )
++    );
+   }
+ }
+ 
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 3b2a7da..b70f658 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -3,27 +3,15 @@ import { Table } from '@finos/perspective';
+ import { ServerRespond } from './DataStreamer';
+ import './Graph.css';
+ 
+-/**
+- * Props declaration for <Graph />
+- */
+-interface IProps {
+-  data: ServerRespond[],
++interface PerspectiveViewerElement extends HTMLElement {
++  load: (table: Table) => void;
+ }
+ 
+-/**
+- * Perspective library adds load to HTMLElement prototype.
+- * This interface acts as a wrapper for Typescript compiler.
+- */
+-interface PerspectiveViewerElement {
+-  load: (table: Table) => void,
++interface IProps {
++  data: ServerRespond[];
+ }
+ 
+-/**
+- * React component that renders Perspective based on data
+- * parsed from its parent through data property.
+- */
+ class Graph extends Component<IProps, {}> {
+-  // Perspective table
+   table: Table | undefined;
+ 
+   render() {
+@@ -31,41 +19,37 @@ class Graph extends Component<IProps, {}> {
+   }
+ 
+   componentDidMount() {
+-    // Get element to attach the table from the DOM.
+-    const elem: PerspectiveViewerElement = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
++    const elem = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
+ 
+     const schema = {
+       stock: 'string',
+       top_ask_price: 'float',
+-      top_bid_price: 'float',
+-      timestamp: 'date',
++      timestamp: 'string',
+     };
+ 
+-    if (window.perspective && window.perspective.worker()) {
+-      this.table = window.perspective.worker().table(schema);
+-    }
+-    if (this.table) {
+-      // Load the `table` in the `<perspective-viewer>` DOM reference.
++    const table = window.perspective.worker().table(schema);
++    elem.load(table);
+ 
+-      // Add more Perspective configurations here.
+-      elem.load(this.table);
+-    }
++    elem.setAttribute('view', 'y_line');
++    elem.setAttribute('column-pivots', '["stock"]');
++    elem.setAttribute('row-pivots', '["timestamp"]');
++    elem.setAttribute('columns', '["top_ask_price"]');
++    elem.setAttribute('aggregates', '{"stock":"distinct count","top_ask_price":"avg","timestamp":"distinct count"}');
++
++    this.table = table;
+   }
+ 
+   componentDidUpdate() {
+-    // Everytime the data props is updated, insert the data into Perspective table
+     if (this.table) {
+-      // As part of the task, you need to fix the way we update the data props to
+-      // avoid inserting duplicated entries into Perspective table again.
+-      this.table.update(this.props.data.map((el: any) => {
+-        // Format the data from ServerRespond to the schema
+-        return {
+-          stock: el.stock,
+-          top_ask_price: el.top_ask && el.top_ask.price || 0,
+-          top_bid_price: el.top_bid && el.top_bid.price || 0,
+-          timestamp: el.timestamp,
+-        };
+-      }));
++      this.table.update([
++        this.props.data.map((el: any) => {
++          return {
++            stock: el.stock,
++            top_ask_price: el.top_ask && el.top_ask.price,
++            timestamp: el.timestamp,
++          };
++        }),
++      ]);
+     }
+   }
+ }
+-- 
+2.45.1.windows.1
+
